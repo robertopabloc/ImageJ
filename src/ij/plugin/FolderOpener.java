@@ -117,84 +117,27 @@ public class FolderOpener implements PlugIn, TextListener {
 
 	public void run(String arg) {
 		boolean isMacro = Macro.getOptions()!=null;
-		if (!directorySet)
-			directory = null;
-		if (arg!=null && !arg.equals(""))
-			directory = arg;
-		else {
-			if (!isMacro) {
-				sortFileNames = staticSortFileNames;
-				openAsVirtualStack = staticOpenAsVirtualStack;
-			}
-			arg = null;
-			String macroOptions = Macro.getOptions();
-			if (macroOptions!=null) {
-				legacyRegex = Macro.getValue(macroOptions, "or", "");
-				if (legacyRegex.equals(""))
-					legacyRegex = null;
-			}
-		}
-		if (arg==null) {
-			if (!showDialog()) return;
-		}
-		if (directory==null || directory.length()==0) {
-			error("No directory specified.     ");
-			return;
-		}
+		checkDirectorySet();
+		arg = checkArg1(arg, isMacro);
+		checkarg2(arg);
 		File file = new File(directory);
 		String[] list = file.list();
-		if (list==null) {
-			String parent = file.getParent();
-			if (parent!=null) {
-				file = new File(parent);
-				list = file.list();
-			}
-			if (list!=null)
-				directory = parent;
-			else {
-				error("Directory not found: "+directory);
-				return;
-			}
-		}
-		if (!(directory.endsWith("/")||directory.endsWith("\\")))
-			directory += "/";
-		if (arg==null && !isMacro)
-			Prefs.set(DIR_KEY, directory);
+		list = checkFileList(file, list);
+		checkDirectoryEnd();
+		SetPrefs(arg, isMacro);
 		//remove subdirectories from list
 		ArrayList fileList = new ArrayList();
-		for (int i=0; i<list.length; i++) {
-			File f = (new File(directory+list[i]));
-			if (!f.isDirectory())
-				fileList.add(list[i]);
-		}
-		if (fileList.size()<list.length)
-			list = (String[])fileList.toArray(new String[fileList.size()]);
+		addToFileList(list, fileList);
+		list = chekToSetList(list, fileList);
 
-		String title = directory;
-		if (title.endsWith(File.separator) || title.endsWith("/"))
-			title = title.substring(0, title.length()-1);
-		int index = title.lastIndexOf(File.separatorChar);
-		if (index!=-1)
-			title = title.substring(index + 1);
-		else {
-			index = title.lastIndexOf("/");
-			if (index!=-1)
-				title = title.substring(index + 1);
-		}
-		if (title.endsWith(":"))
-			title = title.substring(0, title.length()-1);
-		
+		String title = getTitle();
+
 		list = trimFileList(list);
-		if (list==null)
-			return;
-		String pluginName = "Sequence Reader";
-		if (legacyRegex!=null)
-			pluginName += "(legacy)";
+
+		String pluginName = getPluginName();
 		list = getFilteredList(list, filter, pluginName);
-		if (list==null)
-			return;
-		if (sortFileNames || IJ.isMacOSX())
-			list = StringSorter.sortNumerically(list);
+
+		list = sortList(list);
 		if (IJ.debugMode) IJ.log("FolderOpener: "+directory+" ("+list.length+" files)");
 		int width=0, height=0, stackSize=1;
 		ImageStack stack = null;
@@ -204,46 +147,15 @@ public class FolderOpener implements PlugIn, TextListener {
 		boolean allSameCalibration = true;
 		IJ.resetEscape();		
 		Overlay overlay = null;
-		if (this.nFiles==0)
-			this.nFiles = list.length;
+
 		boolean dicomImages = false;
 		try {
-			for (int i=0; i<list.length; i++) {
-				Opener opener = new Opener();
-				opener.setSilentMode(true);
-				IJ.redirectErrorMessages(true);
-				ImagePlus imp = opener.openTempImage(directory, list[i]);
-				IJ.redirectErrorMessages(false);
-				if (imp!=null) {
-					width = imp.getWidth();
-					height = imp.getHeight();
-					if (this.bitDepth==0) {
-						this.bitDepth = imp.getBitDepth();
-						this.defaultBitDepth = bitDepth;
-					}
-					String info = (String)imp.getProperty("Info");
-					if (info!=null && info.contains("7FE0,0010"))
-						dicomImages = true;
-					break;
-				}
-			}
-			if (width==0) {
-				error("This folder does not appear to contain\n"
-				+ "any TIFF, JPEG, BMP, DICOM, GIF, FITS or PGM files.\n \n"
-				+ "   \""+directory+"\"");
-				return;
-			}
+			ForImp(list);
 			IJ.showStatus("");
 			t0 = System.currentTimeMillis();
-			if (dicomImages && !IJ.isMacOSX() && !sortFileNames)
-				list = StringSorter.sortNumerically(list);
+			list = checkList2(list, dicomImages);
 
-			if (this.nFiles<1)
-				this.nFiles = list.length;
-			if (this.start<1 || this.start>list.length)
-				this.start = 1;
-			if (this.start+this.nFiles-1>list.length)
-				this.nFiles = list.length-this.start+1;
+			checkNfiles(list);
 			int count = 0;
 			int counter = 0;
 			ImagePlus imp = null;
@@ -495,7 +407,133 @@ public class FolderOpener implements PlugIn, TextListener {
    			}
 		}
 	}
-	
+
+	private void checkNfiles(String[] list) {
+		if (this.nFiles<1)
+			this.nFiles = list.length;
+		if (this.start<1 || this.start> list.length)
+			this.start = 1;
+		if (this.start+this.nFiles-1> list.length)
+			this.nFiles = list.length-this.start+1;
+	}
+
+	private String[] checkList2(String[] list, boolean dicomImages) {
+		if (dicomImages && !IJ.isMacOSX() && !sortFileNames)
+			list = StringSorter.sortNumerically(list);
+		return list;
+	}
+
+	private void ForImp(String[] list) {
+		for (int i = 0; i< list.length; i++) {
+			Opener opener = new Opener();
+			opener.setSilentMode(true);
+			IJ.redirectErrorMessages(true);
+			ImagePlus imp = opener.openTempImage(directory, list[i]);
+			IJ.redirectErrorMessages(false);
+		}
+	}
+
+	private String[] sortList(String[] list) {
+		if (sortFileNames || IJ.isMacOSX())
+			list = StringSorter.sortNumerically(list);
+		return list;
+	}
+
+	private String getPluginName() {
+		String pluginName = "Sequence Reader";
+		if (legacyRegex!=null)
+			pluginName += "(legacy)";
+		return pluginName;
+	}
+
+	private String getTitle() {
+		String title = directory;
+		if (title.endsWith(File.separator) || title.endsWith("/"))
+			title = title.substring(0, title.length()-1);
+		int index = title.lastIndexOf(File.separatorChar);
+		if (index!=-1)
+			title = title.substring(index + 1);
+		else {
+			index = title.lastIndexOf("/");
+			if (index!=-1)
+				title = title.substring(index + 1);
+		}
+		if (title.endsWith(":"))
+			title = title.substring(0, title.length()-1);
+		return title;
+	}
+
+	private String[] chekToSetList(String[] list, ArrayList fileList) {
+		if (fileList.size()< list.length)
+			list = (String[]) fileList.toArray(new String[fileList.size()]);
+		return list;
+	}
+
+	private void addToFileList(String[] list, ArrayList fileList) {
+		for (int i = 0; i< list.length; i++) {
+			File f = (new File(directory+ list[i]));
+			if (!f.isDirectory())
+				fileList.add(list[i]);
+		}
+	}
+
+	private void SetPrefs(String arg, boolean isMacro) {
+		if (arg ==null && !isMacro)
+			Prefs.set(DIR_KEY, directory);
+	}
+
+	private void checkDirectoryEnd() {
+		if (!(directory.endsWith("/")||directory.endsWith("\\")))
+			directory += "/";
+	}
+
+	private String[] checkFileList(File file, String[] list) {
+		if (list ==null) {
+			String parent = file.getParent();
+			if (parent!=null) {
+				file = new File(parent);
+				list = file.list();
+			}
+			if (list !=null)
+				directory = parent;
+			else {
+				error("Directory not found: "+directory);
+				return null;
+			}
+		}
+		return list;
+	}
+
+	private String checkArg1(String arg, boolean isMacro) {
+		if (arg !=null && !arg.equals(""))
+			directory = arg;
+		else {
+			if (!isMacro) {
+				sortFileNames = staticSortFileNames;
+				openAsVirtualStack = staticOpenAsVirtualStack;
+			}
+			arg = null;
+			String macroOptions = Macro.getOptions();
+			if (macroOptions!=null) {
+				legacyRegex = Macro.getValue(macroOptions, "or", "");
+				if (legacyRegex.equals(""))
+					legacyRegex = null;
+			}
+		}
+		return arg;
+	}
+
+	private void checkDirectorySet() {
+		if (!directorySet)
+			directory = null;
+	}
+
+	private void checkarg2(String arg) {
+		if (arg==null && !showDialog() ) {
+			return;
+		}
+	}
+
 	private void error(String msg) {
 		IJ.error("Import>Image Sequence", msg);
 	}

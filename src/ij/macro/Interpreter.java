@@ -20,7 +20,7 @@ public class Interpreter implements MacroConstants {
 	static final int MAX_ARGS = 20;
 
 	int pc;
-	int token;
+	public int token;
 	int tokenAddress;
 	double tokenValue;
 	String tokenString;
@@ -232,7 +232,7 @@ public class Interpreter implements MacroConstants {
 		done = false;
 	}
 
-	final void getToken() {
+	public final void getToken() {
 		if (done) return;
 		token = pgm.code[++pc];
 		//IJ.log(pc+" "+pgm.decodeToken(token));
@@ -254,7 +254,7 @@ public class Interpreter implements MacroConstants {
 		return pgm.code[pc+2]&TOK_MASK;
 	}
 
-	final void putTokenBack() {
+	public final void putTokenBack() {
 		pc--;
 		if (pc<0)
 			pc = -1;
@@ -1326,13 +1326,13 @@ public class Interpreter implements MacroConstants {
 		}
 	}
 	
-	final void getLeftParen() {
+	public final void getLeftParen() {
 		getToken();
 		if (token!='(')
 			error("'(' expected");
 	}
 
-	final void getRightParen() {
+	public final void getRightParen() {
 		getToken();
 		if (token!=')')
 			error("')' expected");
@@ -1355,7 +1355,7 @@ public class Interpreter implements MacroConstants {
 		}
 	}
 
-	void error (String message) {
+	public void error(String message) {
 		errorMessage = message;
 		if (ignoreErrors)
 			return;
@@ -1508,7 +1508,7 @@ public class Interpreter implements MacroConstants {
 		return str;
 	}
 
-	final String getStringTerm() {
+	public final String getStringTerm() {
 		String str;
 		Variable v;
 		getToken();
@@ -1573,11 +1573,6 @@ public class Interpreter implements MacroConstants {
 				str = str.substring(0, str.length()-1);
 			return str;
 		}
-	}
-
-	final boolean isStringFunction() {
-		Symbol symbol = pgm.table[tokenAddress];
-		return symbol.type==D2S;
 	}
 
 	final double getExpression() {
